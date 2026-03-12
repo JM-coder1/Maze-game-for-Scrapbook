@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Game I made for you🥰</title>
+
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+<style>
+  :root {
+    --bg-color: #050505;
+    --wall-color: #1a1a1a;
+    --violet-neon: #8a2be2;
+    --yellow-neon: #e2d100;
+    --exit-blue: radial-gradient(circle, #00d4ff 0%, #0055ff 100%);
+    --cell-size: 38px;
+  }
+
+  body {
+    background-color: var(--bg-color);
+    color: white;
+    text-align: center;
+    font-family: 'Courier New', Courier, monospace;
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    touch-action: none; 
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* Responsive cell size for smaller phones */
+  @media screen and (max-width: 420px) {
+    :root { --cell-size: 32px; }
+  }
+
+  #maze-container {
+    padding: 10px;
+    border: 2px solid #333;
+    border-radius: 8px;
+    background: #000;
+  }
+
+  #maze {
+    display: grid;
+    grid-template-columns: repeat(10, var(--cell-size));
+    grid-template-rows: repeat(10, var(--cell-size));
+    gap: 2px;
+  }
+
+  .cell {
+    width: var(--cell-size);
+    height: var(--cell-size);
+    background: #0a0a0a;
+    position: relative;
+    box-sizing: border-box;
+  }
+
+  .wall {
+    background: var(--wall-color);
+    border: 1px solid #333;
+  }
+
+  .player {
+    background: var(--yellow-neon);
+    border-radius: 4px;
+    box-shadow: 0 0 15px var(--yellow-neon);
+    z-index: 10;
+    transform: scale(0.85);
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    transition: all 0.1s;
+  }
+
+  .goal {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--exit-blue);
+    border-radius: 50%;
+    box-shadow: 0 0 15px rgba(0, 170, 255, 0.7);
+    z-index: 5;
+    animation: breathe 2s infinite ease-in-out;
+  }
+
+  .trail::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 10px;
+    height: 10px;
+    background: var(--violet-neon);
+    border-radius: 50%;
+    box-shadow: 0 0 10px var(--violet-neon), 0 0 20px var(--violet-neon);
+  }
+
+  @keyframes breathe {
+    0% { transform: scale(0.6); opacity: 0.7; }
+    50% { transform: scale(0.85); opacity: 1; box-shadow: 0 0 25px rgba(0, 170, 255, 0.9); }
+    100% { transform: scale(0.6); opacity: 0.7; }
+  }
+
+  #popup {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(10, 10, 10, 0.95);
+    border: 2px solid var(--violet-neon);
+    padding: 30px;
+    border-radius: 20px;
+    box-shadow: 0 0 50px rgba(138, 43, 226, 0.5);
+    z-index: 1100;
+    min-width: 250px;
+  }
+
+  button {
+    background: var(--yellow-neon);
+    color: black;
+    border: none;
+    padding: 12px 25px;
+    font-weight: bold;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-top: 15px;
+    text-transform: uppercase;
+  }
+
+  #help-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    transition: opacity 0.6s ease;
+    pointer-events: none; 
+  }
+
+  .instruction-text {
+    color: var(--yellow-neon);
+    font-size: 1.4rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-shadow: 0 0 10px var(--yellow-neon);
+    text-align: center;
+    padding: 20px;
+  }
+</style>
+</head>
+<body>
+
+<h2 id="level-title" style="color:var(--yellow-neon); letter-spacing:2px;">Find your way to me🥰</h2>
+
+<div id="maze-container">
+  <div id="maze"></div>
+</div>
+
+<div id="popup">
+  <h3 id="popup-title" style="color:var(--yellow-neon)">YEHAY! WINNER! ❤️</h3>
+  <p id="msg">Message Loading...</p>
+  <button id="next-btn" onclick="nextLevel()">NEXT PATTERN</button>
+</div>
+
+<div id="help-overlay">
+  <div id="instruction" class="instruction-text">Loading instructions...</div>
+</div>
+
+<script>
+let confettiActive = false;
+
+function celebrate() {
+  confettiActive = true;
+  const duration = 3 * 1000;
+  const end = Date.now() + duration;
+
+  const isMobile = window.innerWidth < 768;
+  const particleScalar = isMobile ? 0.6 : 1.0; 
+
+  const frame = () => {
+    if (!confettiActive) return; 
+
+    confetti({
+      particleCount: 2,
+      angle: 60,
+      spread: 55,
+      origin: { x: 0 },
+      colors: ['#8a2be2', '#e2d100', '#ffffff'],
+      scalar: particleScalar
+    });
+    confetti({
+      particleCount: 2,
+      angle: 120,
+      spread: 55,
+      origin: { x: 1 },
+      colors: ['#8a2be2', '#e2d100', '#ffffff'],
+      scalar: particleScalar
+    });
+
+    if (Date.now() < end) {
+      requestAnimationFrame(frame);
+    }
+  };
+  frame();
+}
+
+const levels = [
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,1,0,0,1],
+      [1,0,1,1,1,0,1,0,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,0,1,1,1,1,0,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,0,1,1,1,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,0,0,0,1,1,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 1},
+    goal: {x: 8, y: 1},
+    message: "You always find a way to my heart! ❤️"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,0,1,0,1,1,0,1],
+      [1,0,0,0,0,0,1,0,0,1],
+      [1,0,1,1,1,1,1,0,1,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,0,1,0,1,1,1,1,0,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,0,0,0,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 7},
+    goal: {x: 5, y: 7},
+    message: "Navigating through life is better with you! ✨"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,1,0,0,0,0,1,0,1],
+      [1,0,1,0,1,1,0,1,0,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,1,1,0,1,1,1,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,1,1,1,0,1],
+      [1,0,1,0,0,0,1,0,0,1],
+      [1,0,0,0,1,0,0,0,1,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 1},
+    goal: {x: 5, y: 8},
+    message: "Maze finished! My heart already chose you as the final destination."
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,1,1,0,1,1,1,1,0,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,0,1,1,1,0,1,1,1,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,1,1,1,0,1,1,1,0,1],
+      [1,0,0,0,0,1,0,0,0,1],
+      [1,0,1,1,0,0,0,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 8},
+    goal: {x: 8, y: 8},
+    message: "No matter the path, I'll always wait for you! 💖"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,0,1,0,1,0,1,1,0,1],
+      [1,0,1,0,0,0,1,0,0,1],
+      [1,1,1,1,1,1,1,0,1,1],
+      [1,0,0,0,0,0,0,0,1,1],
+      [1,0,1,1,1,1,1,1,1,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,0,0,0,1,1,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 1},
+    goal: {x: 8, y: 8},
+    message: "Yehay! You found the way… just like you found your way into my heart. ❤️"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,0,1,0,1,1,1,1,0,1],
+      [1,0,1,0,1,0,0,0,0,1],
+      [1,0,1,0,1,0,1,1,1,1],
+      [1,0,1,0,1,0,0,0,0,1],
+      [1,0,1,0,1,1,1,1,0,1],
+      [1,0,0,0,0,0,0,1,0,1],
+      [1,1,1,1,1,1,0,0,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 8, y: 1},
+    goal: {x: 5, y: 5},
+    message: "Congratulations! You finished the maze… but the best thing I found in life is still you."
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0,1,0,1],
+      [1,1,1,1,1,1,0,1,0,1],
+      [1,0,0,0,0,1,0,1,0,1],
+      [1,0,1,1,0,1,0,1,0,1],
+      [1,0,1,0,0,1,0,0,0,1],
+      [1,0,1,0,1,1,1,1,1,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,0,0,0,1,1,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 1},
+    goal: {x: 8, y: 1},
+    message: "You solved the maze! Good thing loving you was never confusing. 💖"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,0,1,0,1,0,1,1,0,1],
+      [1,0,1,0,0,0,1,0,0,1],
+      [1,0,1,1,1,1,1,0,1,1],
+      [1,0,0,0,0,0,1,0,0,1],
+      [1,1,1,1,1,0,1,1,0,1],
+      [1,0,0,0,1,0,0,1,0,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 8},
+    goal: {x: 5, y: 7},
+    message: "Yehay, you win! Every path I take always leads back to you. 🌸"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,0,1,0,1,1],
+      [1,0,1,0,0,0,1,0,0,1],
+      [1,0,1,0,1,1,1,1,0,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,1,1,0,1,1,1,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,1,1,0,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 1},
+    goal: {x: 8, y: 7},
+    message: "Maze completed! Just like this game, I'll always find my way to you. 💞"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,1,1,1,0,1],
+      [1,0,1,0,0,0,0,1,0,1],
+      [1,0,1,0,1,1,0,1,0,1],
+      [1,0,1,0,1,0,0,1,0,1],
+      [1,0,1,0,1,1,1,1,0,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,0,0,0,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 8},
+    goal: {x: 5, y: 5},
+    message: "Congrats! The real prize is knowing I love you more every day. ✨"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,0,1,0,1,1,1,1,1,1],
+      [1,0,1,0,1,0,0,0,0,1],
+      [1,0,0,0,1,0,1,1,0,1],
+      [1,1,1,1,1,0,1,0,0,1],
+      [1,0,0,0,0,0,1,1,1,1],
+      [1,0,1,1,1,1,1,0,0,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 1},
+    goal: {x: 8, y: 1},
+    message: "You reached the end! But our story together is just getting started. 💕"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,0,1,0,1,1,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,0,1,1,1,1,1,1,0,1],
+      [1,0,0,0,0,0,0,1,0,1],
+      [1,1,1,1,1,1,0,1,0,1],
+      [1,0,0,0,0,1,0,1,0,1],
+      [1,0,1,1,0,0,0,0,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 8},
+    goal: {x: 8, y: 1},
+    message: "Winner! Thank you for being the best part of my life. 🥰"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,1,0,0,0,1,0,0,1],
+      [1,0,1,0,1,0,1,0,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,1,1,1,1,1,0,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,1,1,1,1,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,0,0,0,1,1,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 8, y: 1},
+    goal: {x: 1, y: 1},
+    message: "You made it! If love was a maze, I'd choose you every time. ❤️"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,1,1,1,1,1,1,1,0,1],
+      [1,0,0,0,0,0,0,1,0,1],
+      [1,0,1,1,1,1,0,1,0,1],
+      [1,0,1,0,0,1,0,1,0,1],
+      [1,0,1,1,0,1,0,1,0,1],
+      [1,0,0,0,0,1,0,0,0,1],
+      [1,1,1,1,1,1,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 1},
+    goal: {x: 8, y: 8},
+    message: "Level complete! My favorite destination will always be you. 🌹"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0,1,0,1],
+      [1,1,1,1,1,0,1,1,0,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,1,1,0,1,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,1,1,1,1,1,1,1,0,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,0,1,1,1,0,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 1},
+    goal: {x: 8, y: 8},
+    message: "You solved the maze! But you solved my heart first. ❤️🧩"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,1,1,0,0,1],
+      [1,0,1,1,1,0,0,0,0,1],
+      [1,0,0,0,0,0,1,1,1,1],
+      [1,0,1,1,1,0,1,1,1,1],
+      [1,0,1,0,0,0,1,1,1,1],
+      [1,0,1,0,1,0,0,1,1,1],
+      [1,0,1,0,1,1,0,0,0,1],
+      [1,1,1,0,0,0,0,0,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 8, y: 8},
+    goal: {x: 1, y: 1},
+    message: "Winner! I'm so lucky the path of my life led to you. 🍀❤️"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,0,1,0,1,1,1,1,0,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,1,1,0,1,1,0,1],
+      [1,0,0,0,0,0,0,1,0,1],
+      [1,0,1,1,1,1,0,1,0,1],
+      [1,0,0,0,1,0,0,1,0,1],
+      [1,0,1,0,0,0,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 8},
+    goal: {x: 8, y: 1},
+    message: "Maze cleared! Thank you for being my happiness. ✨🥰"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,0,1,1,1,0,1,1,1,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,1,1,0,1,1,1,1,0,1],
+      [1,1,1,0,0,0,1,1,0,1],
+      [1,0,1,0,1,0,1,0,0,1],
+      [1,0,0,0,1,0,0,0,1,1],
+      [1,0,0,0,1,0,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 8, y: 1},
+    goal: {x: 1, y: 8},
+    message: "You made it to the end! Just like I always want to end up with you. 💞🌸"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,1,0,1,1,1,1,1,0,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,0,1,1,1,0,1,1,0,1],
+      [1,0,0,0,0,0,0,1,0,1],
+      [1,1,1,1,0,1,0,1,0,1],
+      [1,0,0,0,0,1,0,0,0,1],
+      [1,0,1,1,0,0,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 1},
+    goal: {x: 5, y: 8},
+    message: "Yehay! You win! My heart has been yours since the beginning. 🎉❤️"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,1,0,0,0,1],
+      [1,0,1,1,0,1,0,1,1,1],
+      [1,0,1,0,0,0,0,1,0,1],
+      [1,0,1,0,1,0,1,0,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,1,1,0,1,1,0,1],
+      [1,0,0,0,0,0,1,0,0,1],
+      [1,0,1,1,1,1,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 8, y: 8},
+    goal: {x: 1, y: 8},
+    message: "Congratulations! Every road in my life leads to loving you. 🛤️💖"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,1,1,1,0,1,0,1,0,1],
+      [1,0,0,0,0,0,0,1,0,1],
+      [1,0,1,1,1,0,1,1,0,1],
+      [1,0,0,0,0,0,1,1,0,1],
+      [1,0,1,1,1,1,1,1,0,1],
+      [1,0,1,0,0,0,1,0,0,1],
+      [1,0,1,1,1,1,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 8},
+    goal: {x: 8, y: 8},
+    message: "Maze completed! My favorite destination is still you. 📍💕"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,1,1,1,1,1,1,0,1],
+      [1,0,1,0,0,0,1,1,0,1],
+      [1,0,0,0,0,0,1,1,0,1],
+      [1,1,1,1,1,0,1,1,0,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,1,1,0,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,0,0,0,0,0,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 1},
+    goal: {x: 8, y: 1},
+    message: "You finished the maze! And you'll always be my favorite prize. 🏆💗"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,0,1,1,1,0,1,1,1,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,0,1,0,1,1,1,1,0,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,1,1,0,1,0,1,1],
+      [1,0,0,0,0,0,1,0,0,1],
+      [1,0,1,1,1,1,1,0,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 8, y: 8},
+    goal: {x: 1, y: 1},
+    message: "Winner! My heart chose you long before this maze ended. ❤️✨"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,1,0,0,1],
+      [1,1,1,1,1,0,1,0,1,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,1,1,0,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,0,1,0,1,1,0,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,0,1,1,1,0,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 8},
+    goal: {x: 8, y: 1},
+    message: "You reached the final maze! My love for you has no finish line. 💝🌟"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,0,1,0,1,0,1,1,0,1],
+      [1,0,1,0,0,0,1,0,0,1],
+      [1,0,1,1,1,1,1,0,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,0,1,0,1,1,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,0,1,1,1,1,1,0,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 1},
+    goal: {x: 8, y: 8},
+    message: "Yehay! You did it! And I'm still the luckiest because I have you. 💖"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0,1,0,1],
+      [1,1,1,1,1,0,1,1,0,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,0,1,1,1,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,0,1,0,1,1,1,1,0,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,1,1,0,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 8, y: 1},
+    goal: {x: 5, y: 8},
+    message: "Your persistence paid off! You found the light at the end of the tunnel. 🌟"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,0,1,0,1,1,1,1,1,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,0,0,0,1,0,1,1,0,1],
+      [1,1,1,1,1,0,1,0,0,1],
+      [1,0,0,0,0,0,1,0,1,1],
+      [1,0,1,1,1,1,1,0,0,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 1},
+    goal: {x: 8, y: 8},
+    message: "There's no puzzle too complex for a heart as determined as yours. 💖"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,1,1,1,0,1],
+      [1,0,1,0,0,0,0,1,0,1],
+      [1,0,1,0,1,1,0,1,0,1],
+      [1,0,1,0,0,1,0,0,0,1],
+      [1,0,1,1,0,1,0,1,1,1],
+      [1,0,0,0,0,1,0,0,0,1],
+      [1,1,1,1,1,1,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 1},
+    goal: {x: 8, y: 8},
+    message: "You navigated every twist with grace. Welcome to the finish line! 🏆"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,0,1,0,1,1,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,0,1,1,1,1,1,1,0,1],
+      [1,0,0,0,0,0,0,1,0,1],
+      [1,1,1,1,1,0,1,1,0,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 8, y: 1},
+    goal: {x: 1, y: 8},
+    message: "So proud of your journey! ✨"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,1,0,0,0,1,0,0,1],
+      [1,0,1,0,1,0,1,0,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,1,1,0,1,1,0,1],
+      [1,0,0,0,0,0,0,1,0,1],
+      [1,0,1,1,1,1,0,1,0,1],
+      [1,0,0,0,1,0,0,1,0,1],
+      [1,1,1,0,0,0,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 8},
+    goal: {x: 8, y: 1},
+    message: "Time for a victory lap! 🎉"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,1,0,0,0,1],
+      [1,0,1,1,0,1,0,1,0,1],
+      [1,0,1,0,0,0,0,1,0,1],
+      [1,0,1,0,1,1,1,1,0,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,1,1,1,1,0,1,1,1,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,1,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 1},
+    goal: {x: 8, y: 8},
+    message: "Every wrong turn was just a step toward this beautiful win. You did it! 🌈"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,1,1,0,1,1,1,0,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,0,1,1,1,0,1,1,0,1],
+      [1,0,0,0,0,0,1,0,0,1],
+      [1,1,1,1,0,1,1,0,1,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,1,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 8, y: 1},
+    goal: {x: 1, y: 8},
+    message: "You made it! The world is a little brighter now that you've found your way through. ☀️"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,1,0,0,0,0,1,0,1],
+      [1,0,1,0,1,1,0,1,0,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,1,1,0,1,1,1,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,0,1,1,1,1,1],
+      [1,0,0,0,0,1,0,0,0,1],
+      [1,1,1,0,1,1,0,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 1, y: 7},
+    goal: {x: 1, y: 1},
+    message: "Success looks good on you. Thanks for sticking with it until the very end! 🎈"
+  },
+  {
+    map: [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,0,1,1,1,1],
+      [1,0,1,0,0,0,0,0,0,1],
+      [1,0,1,0,1,1,1,0,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,1,1,0,1,0,1,1,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,0,1,1,1,1,1,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ],
+    start: {x: 8, y: 8},
+    goal: {x: 1, y: 1},
+    message: "No wall is too high and no path too long for you. You did it! 🥇"
+  }
+];
+
+function shuffleLevels(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+shuffleLevels(levels);
+
+let currentLevelIndex = 0;
+let player = {x: 0, y: 0};
+let gridCells = [];
+let isMoving = false;
+
+const mazeElement = document.getElementById("maze");
+
+function initGame() {
+  const level = levels[currentLevelIndex];
+  player = { ...level.start };
+  drawMaze(level);
+}
+
+function drawMaze(level) {
+  mazeElement.innerHTML = "";
+  gridCells = [];
+  for(let y=0; y<10; y++) {
+    gridCells[y] = [];
+    for(let x=0; x<10; x++) {
+      const cell = document.createElement("div");
+      cell.classList.add("cell");
+      if(level.map[y][x] === 1) cell.classList.add("wall");
+      if(x === level.goal.x && y === level.goal.y) {
+          const goalDiv = document.createElement("div");
+          goalDiv.classList.add("goal");
+          cell.appendChild(goalDiv);
+      }
+      if(x === player.x && y === player.y) {
+          const playerDiv = document.createElement("div");
+          playerDiv.classList.add("player");
+          playerDiv.id = "player-sprite";
+          cell.appendChild(playerDiv);
+      }
+      mazeElement.appendChild(cell);
+      gridCells[y][x] = cell;
+    }
+  }
+}
+
+function slide(dx, dy) {
+  if(isMoving || document.getElementById("popup").style.display === "block") return;
+  const level = levels[currentLevelIndex];
+  let path = [];
+  let nextX = player.x;
+  let nextY = player.y;
+
+  while(true) {
+    let testX = nextX + dx;
+    let testY = nextY + dy;
+    if(testY < 0 || testY >= 10 || testX < 0 || testX >= 10 || level.map[testY][testX] === 1) break;
+    nextX = testX;
+    nextY = testY;
+    path.push({x: nextX, y: nextY});
+    if (dx !== 0) {
+      if ((nextY > 0 && level.map[nextY-1][nextX] === 0) || (nextY < 9 && level.map[nextY+1][nextX] === 0)) break;
+    } else if (dy !== 0) {
+      if ((nextX > 0 && level.map[nextY][nextX-1] === 0) || (nextX < 9 && level.map[nextY][nextX+1] === 0)) break;
+    }
+  }
+  if(path.length > 0) animateSlide(path);
+}
+
+function animateSlide(path) {
+  isMoving = true;
+  let i = 0;
+  const interval = setInterval(() => {
+    const currentPlayerCell = gridCells[player.y][player.x];
+    const nextPos = path[i];
+    const nextCell = gridCells[nextPos.y][nextPos.x];
+    const playerSprite = document.getElementById("player-sprite");
+
+    if (nextCell.classList.contains("trail")) currentPlayerCell.classList.remove("trail");
+    else currentPlayerCell.classList.add("trail");
+
+    player.x = nextPos.x;
+    player.y = nextPos.y;
+    nextCell.appendChild(playerSprite);
+    i++;
+    if(i >= path.length) {
+      clearInterval(interval);
+      isMoving = false;
+      checkWin();
+    }
+  }, 60); 
+}
+
+function checkWin() {
+  const level = levels[currentLevelIndex];
+  if(player.x === level.goal.x && player.y === level.goal.y) {
+    setTimeout(() => {
+        const popup = document.getElementById("popup");
+        document.getElementById("msg").innerText = level.message;
+        const btn = document.getElementById("next-btn");
+        if(currentLevelIndex === levels.length - 1) {
+            document.getElementById("popup-title").innerText = "THE END! ❤️";
+            btn.innerText = "PLAY AGAIN";
+        } else {
+            document.getElementById("popup-title").innerText = "YEHAY! WINNER! ❤️";
+            btn.innerText = "NEXT PATTERN";
+        }
+        popup.style.display = "block";
+        celebrate();
+    }, 200);
+  }
+}
+
+function nextLevel() {
+  confettiActive = false; 
+  confetti.reset();      
+  document.getElementById("popup").style.display = "none";
+  if(currentLevelIndex === levels.length - 1) {
+    currentLevelIndex = 0;
+    shuffleLevels(levels); 
+  } else {
+    currentLevelIndex++;
+  }
+  initGame(); 
+}
+
+// --- OVERLAY & CONTROL LOGIC ---
+const overlay = document.getElementById("help-overlay");
+const instruction = document.getElementById("instruction");
+
+if (window.innerWidth < 768) instruction.innerText = "SWIPE TO MOVE 👆";
+else instruction.innerText = "USE ARROW KEYS TO MOVE ⌨️";
+
+function dismissOverlay() {
+  overlay.style.opacity = "0";
+  setTimeout(() => overlay.style.display = "none", 600);
+}
+
+document.addEventListener("keydown", e => {
+  dismissOverlay();
+  if(e.key === "ArrowUp" || e.key === "w") slide(0, -1);
+  if(e.key === "ArrowDown" || e.key === "s") slide(0, 1);
+  if(e.key === "ArrowLeft" || e.key === "a") slide(-1, 0);
+  if(e.key === "ArrowRight" || e.key === "d") slide(1, 0);
+});
+
+let touchStartX = 0;
+let touchStartY = 0;
+
+document.addEventListener('touchstart', e => {
+  dismissOverlay();
+  touchStartX = e.changedTouches[0].screenX;
+  touchStartY = e.changedTouches[0].screenY;
+}, false);
+
+document.addEventListener('touchend', e => {
+  let deltaX = e.changedTouches[0].screenX - touchStartX;
+  let deltaY = e.changedTouches[0].screenY - touchStartY;
+  if (Math.abs(deltaX) > Math.abs(deltaY)) {
+      if (Math.abs(deltaX) > 30) slide(deltaX > 0 ? 1 : -1, 0);
+  } else {
+      if (Math.abs(deltaY) > 30) slide(0, deltaY > 0 ? 1 : -1);
+  }
+}, false);
+
+initGame();
+</script>
+</body>
+</html>
